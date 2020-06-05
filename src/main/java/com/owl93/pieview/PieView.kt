@@ -1,10 +1,7 @@
 package com.owl93.pieview
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.*
 import android.util.AttributeSet
 import android.util.Log
 import android.view.View
@@ -106,10 +103,10 @@ class PieView: View {
             field = value
             value?.update(this)
         }
+
     private var componentPaints: List<Paint> = emptyList()
-    private var bounds = RectF(0f, 0f, 0f, 0f)
-
-
+    private var viewBounds = Rect(0, 0, 0, 0)
+    private var pieBounds = RectF(viewBounds)
     constructor(context: Context) : super(context) { init(null, context) }
     constructor(context: Context, attrs: AttributeSet): super(context, attrs) { init(attrs, context) }
     constructor(context: Context, attrs: AttributeSet, defStyleAttr: Int) : super(context, attrs, defStyleAttr) { init(attrs, context) }
@@ -117,14 +114,42 @@ class PieView: View {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        val minDimen = min(width, height)
-        bounds.apply {
-            left = 0 + strokeWidth/2
-            top = 0 + strokeWidth/2
-            right = minDimen.toFloat() - strokeWidth/2
-            bottom = minDimen.toFloat() - strokeWidth/2
+        Log.d(TAG, "onMeasure w ${MeasureSpec.toString(widthMeasureSpec)}")
+        Log.d(TAG, "onMeasure h ${MeasureSpec.toString(heightMeasureSpec)}")
+        val desiredWidth = suggestedMinimumWidth + paddingLeft + paddingRight
+        val desiredHeight = suggestedMinimumHeight + paddingTop + paddingBottom
+        val calcWidth = measureDimen(desiredWidth, widthMeasureSpec)
+        val calcHeight = measureDimen(desiredHeight, widthMeasureSpec)
+        val minDimen = min(calcWidth, calcHeight)
+
+        viewBounds.let {
+            it.left = this.left + paddingLeft
+            it.top = this.top + paddingTop
+            it.right =  minDimen - paddingRight
+            it.bottom = minDimen - paddingBottom
+        }
+
+        pieBounds.apply {
+            left = viewBounds.left.toFloat()
+            top = viewBounds.top.toFloat()
+            right = viewBounds.right.toFloat()
+            bottom = viewBounds.bottom.toFloat()
         }
     }
+
+    private fun measureDimen(desiredSize: Int, measureSpec: Int) : Int {
+        var result = 0
+        val mode = MeasureSpec.getMode(measureSpec)
+        val size = MeasureSpec.getSize(measureSpec)
+        result = when(mode) {
+            MeasureSpec.EXACTLY -> size
+            MeasureSpec.AT_MOST -> min(result, size)
+            else -> desiredSize
+        }
+        if(result < desiredSize) Log.w(TAG, "View too small, may be clipped")
+        return result
+    }
+
 
     private fun init(attrs: AttributeSet?, context: Context) {
         if(attrs == null) return
@@ -152,21 +177,10 @@ class PieView: View {
     }
 
 
-
-
-
-
     override fun onDraw(canvas: Canvas?) {
         if(canvas == null) return
         angles = calculateAngles(components, showDividers, dividerWidth)
-        val minDimen = min(width, height).toFloat()
         val maxStroke = max(strokeWidth, trackWidth)
-        bounds.apply {
-            left = maxStroke/2
-            top =  maxStroke/2
-            right = minDimen - maxStroke/2
-            bottom = minDimen - maxStroke/2
-        }
 
         if(drawTrack) {
             trackPaint.apply {
@@ -175,16 +189,34 @@ class PieView: View {
                 alpha = trackAlpha
                 strokeCap = Paint.Cap.BUTT
             }
-            canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
+            canvas.drawArc(
+                    pieBounds.left + maxStroke/2,
+                    pieBounds.top + maxStroke/2,
+                    pieBounds.bottom - maxStroke/2,
+                    pieBounds.right - maxStroke/2,
+                    0f, 360f, false, trackPaint
+            )
         }
 
         dividerPaint.strokeWidth = strokeWidth
         var start = -90f + startAngle + if(showDividers) dividerWidth/2f else 0f
         for((idx, _) in components.withIndex()) {
-            canvas.drawArc(bounds, start, angles[idx].second, false, componentPaints[idx])
+            canvas.drawArc(
+                    pieBounds.left + maxStroke/2,
+                    pieBounds.top + maxStroke/2,
+                    pieBounds.bottom - maxStroke/2,
+                    pieBounds.right - maxStroke/2,
+                    start, angles[idx].second, false, componentPaints[idx]
+            )
             start += angles[idx].second
             if(showDividers){
-                canvas.drawArc(bounds, start, dividerWidth.toFloat(), false, dividerPaint)
+                canvas.drawArc(
+                        pieBounds.left + maxStroke/2,
+                        pieBounds.top + maxStroke/2,
+                        pieBounds.bottom - maxStroke/2,
+                        pieBounds.right - maxStroke/2,
+                        start, dividerWidth.toFloat(), false, dividerPaint
+                )
                 start += dividerWidth
             }
         }

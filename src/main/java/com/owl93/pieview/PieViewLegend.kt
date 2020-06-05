@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.View
 import java.lang.Exception
 import kotlin.math.max
+import kotlin.math.min
 
 class PieViewLegend: View {
     private val DEFAULT_TEXT_SIZE = 60f
@@ -75,6 +76,7 @@ class PieViewLegend: View {
     var horizontalMargin: Float = DEFAULT_HORIZONTAL_MARGIN
         set(value) { field = value; postInvalidate()}
 
+    private var bounds = Rect()
     private var paints = generatePaints()
     private var textPaints  = generateTextPaints()
     private var textBounds = generateTextBounds()
@@ -149,6 +151,34 @@ class PieViewLegend: View {
         pieView = view
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        //
+        Log.d(TAG, "onMeasure w ${MeasureSpec.toString(widthMeasureSpec)}")
+        Log.d(TAG, "onMeasure h ${MeasureSpec.toString(heightMeasureSpec)}")
+        val desiredWidth = suggestedMinimumWidth + paddingLeft + paddingRight
+        val desiredHeight = suggestedMinimumHeight + paddingTop + paddingBottom
+        setMeasuredDimension(measureDimen(desiredWidth, widthMeasureSpec), measureDimen(desiredHeight, heightMeasureSpec))
+        bounds.let {
+            it.left = this.left + paddingLeft
+            it.top = this.top + paddingTop
+            it.right = this.right - paddingRight
+            it.bottom = this.bottom - paddingBottom
+        }
+    }
+
+    private fun measureDimen(desiredSize: Int, measureSpec: Int) : Int {
+        var result = 0
+        val mode = MeasureSpec.getMode(measureSpec)
+        val size = MeasureSpec.getSize(measureSpec)
+        result = when(mode) {
+            MeasureSpec.EXACTLY -> size
+            MeasureSpec.AT_MOST -> min(result, size)
+            else -> desiredSize
+        }
+        if(result < desiredSize) Log.w(TAG, "View too small, may be clipped")
+        return result
+    }
+
     override fun onDraw(canvas: Canvas?) {
         if(canvas == null) return
         if(!isInEditMode && pieView == null) {
@@ -156,29 +186,30 @@ class PieViewLegend: View {
             return
         }
         //compute text boundaries & format labels
+
         texts = generateTexts()
         pieView?.components?.forEachIndexed{ index, _ ->
             textPaints[index].getTextBounds(texts[index], 0, texts[index].length, textBounds[index])
         }
         val components: List<PieView.Component>? = if(isInEditMode) PieView.testComponents else pieView?.components
         if(orientation == Orientation.VERTICAL) {
-            var top = 0f
+            var top = bounds.top.toFloat()
             components?.forEachIndexed { index, _ ->
                 val textHeight = textBounds[index].height().toFloat()
                 val maxHeight = max(shapeSize, textHeight)
                 val cy = top + maxHeight / 2f
-                drawShape(canvas,0f, cy - shapeSize/2, shapeSize, paints[index])
-                canvas.drawText(texts[index],shapeSize + horizontalMargin, cy + textHeight/2, textPaints[index])
+                drawShape(canvas, bounds.left.toFloat(), cy - shapeSize/2, shapeSize, paints[index])
+                canvas.drawText(texts[index],bounds.left + shapeSize + horizontalMargin, cy + textHeight/2, textPaints[index])
                 top += maxHeight + verticalMargin
             }
         }else {
-            var left = 0f
+            var left = bounds.left.toFloat()
             components?.forEachIndexed { index, _ ->
-                val textWidth = textBounds[index].width().toFloat()
-                val maxWidth = max(shapeSize, textWidth)
+                val tb = textBounds[index]
+                val maxWidth = max(shapeSize, tb.width().toFloat())
                 val cx = maxWidth/2 + left
-                drawShape(canvas, cx - shapeSize/2, 0f, shapeSize, paints[index])
-                canvas.drawText(texts[index], cx - textWidth/2, verticalMargin + shapeSize, textPaints[index])
+                drawShape(canvas, cx - shapeSize/2, bounds.top.toFloat(), shapeSize, paints[index])
+                canvas.drawText(texts[index], cx - tb.width()/2f,bounds.top + verticalMargin + shapeSize + tb.height(), textPaints[index])
                 left += maxWidth + horizontalMargin
             }
         }
