@@ -38,7 +38,10 @@
             <enum name="value" value="1"/>
             <enum name="decimal_percent" value="2"/>
         </attr>
-
+        <attr name="legendOrder" format="enum">
+            <enum name="shapeFirst" value="0"/>
+            <enum name="labelFirst" value="1"/>
+        </attr>
 
     </declare-styleable>
 

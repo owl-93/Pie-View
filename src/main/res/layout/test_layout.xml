@@ -25,4 +25,5 @@
         android:layout_gravity="bottom"
         app:legendTextSize="10dp"
         app:legendOrientation="vertical"/>
+
 </FrameLayout>
