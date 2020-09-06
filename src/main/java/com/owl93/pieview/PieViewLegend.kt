@@ -7,7 +7,6 @@ import android.util.Log
 import android.view.View
 import java.lang.Exception
 import kotlin.math.max
-import kotlin.math.min
 
 class PieViewLegend: View {
     private val DEFAULT_ORDER = LegendOrder.SHAPE_FIRST
@@ -24,13 +23,13 @@ class PieViewLegend: View {
     private val DEFAULT_HORIZONTAL_MARGIN = 10f
 
 
-
     private var pieView: PieView? = null
         set(value) {
             field = value
-            paints = generatePaints()
-            textBounds = generateTextBounds()
-            textPaint = generateTextPaint()
+            shapePaints = generatePaints(value)
+            textPaint = generateTextPaint(textColor, textSize)
+            texts = generateTexts(value, valueFormat, drawLabel, drawValue)
+            requestLayout()
             invalidate()
         }
 
@@ -46,53 +45,52 @@ class PieViewLegend: View {
             field = value
             invalidate()
         }
-    var drawLegendLabel : Boolean = DEFAULT_DRAW_LEGEND_LABEL
+
+    var drawLabel : Boolean = DEFAULT_DRAW_LEGEND_LABEL
         set(value) {
             field = value
             requestLayout()
             invalidate()
         }
 
-    var drawLegendValue : Boolean = DEFAULT_DRAW_LEGEND_VALUE
+    var drawValue : Boolean = DEFAULT_DRAW_LEGEND_VALUE
         set(value) {
             field = value
             requestLayout()
-            invalidate() }
-
-    var legendValueFormat: LegendFormat = DEFAULT_LEGEND_FORMAT
+            invalidate()
+        }
+    var valueFormat: LegendFormat = DEFAULT_LEGEND_FORMAT
         set(value) {
             field = value
             requestLayout()
             invalidate()
         }
 
-    var legendTextSize: Float = DEFAULT_TEXT_SIZE
+    var textSize: Float = DEFAULT_TEXT_SIZE
         set(value) {
             field = value
-            textBounds = generateTextBounds()
-            textPaint = generateTextPaint()
+            textPaint = generateTextPaint(textColor, textSize)
             requestLayout()
             invalidate()
         }
 
-    var legendTextColor: Int  = DEFAULT_TEXT_COLOR
+    var textColor: Int  = DEFAULT_TEXT_COLOR
         set(value) {
             field = value
-            textBounds = generateTextBounds()
-            textPaint = generateTextPaint()
+            textPaint = generateTextPaint(textColor, textSize)
             invalidate()
         }
 
     var legendShape: LegendShape = DEFAULT_LEGEND_SHAPE
         set(value) {
             field = value
-            postInvalidate()
+            invalidate()
         }
 
     var shapeCornerRadius: Float = DEFAULT_ROUNDED_RECT_RADIUS
         set(value) {
             field = value
-            postInvalidate()
+            invalidate()
         }
 
     var shapeSize: Float = DEFAULT_LEGEND_SHAPE_SIZE
@@ -116,11 +114,11 @@ class PieViewLegend: View {
             invalidate()
         }
 
-    private var bounds = Rect()
-    private var paints = generatePaints()
-    private var textPaint  = generateTextPaint()
-    private var textBounds = generateTextBounds()
-    private var texts = generateTexts()
+    private var shapePaints = generatePaints(pieView)
+    private var textPaint  = generateTextPaint(textColor, textSize)
+    private var texts = generateTexts(pieView, valueFormat, drawLabel, drawValue)
+    private var textHeightBound = Rect()
+    private val bounds = RectF()
 
     constructor(context: Context) : super(context) { init(null, context) }
     constructor(context: Context, attrs: AttributeSet): super(context, attrs) { init(attrs, context) }
@@ -140,15 +138,15 @@ class PieViewLegend: View {
                 1 -> LegendOrder.LABEL_FIRST
                 else -> LegendOrder.SHAPE_FIRST
             }
-            drawLegendLabel = attributes.getBoolean(R.styleable.PieViewLegend_drawLegendLabel, DEFAULT_DRAW_LEGEND_LABEL)
-            drawLegendValue = attributes.getBoolean(R.styleable.PieViewLegend_drawLegendValue, DEFAULT_DRAW_LEGEND_VALUE)
-            legendValueFormat = when(attributes.getInt(R.styleable.PieViewLegend_legendValueTextFormat, 0)) {
+            drawLabel = attributes.getBoolean(R.styleable.PieViewLegend_drawLegendLabel, DEFAULT_DRAW_LEGEND_LABEL)
+            drawValue = attributes.getBoolean(R.styleable.PieViewLegend_drawLegendValue, DEFAULT_DRAW_LEGEND_VALUE)
+            valueFormat = when(attributes.getInt(R.styleable.PieViewLegend_legendValueTextFormat, 0)) {
                 1 -> LegendFormat.VALUE
                 2 -> LegendFormat.DECIMAL_PERCENT
                 else -> LegendFormat.PERCENT
             }
-            legendTextSize = attributes.getDimension(R.styleable.PieViewLegend_legendTextSize, DEFAULT_TEXT_SIZE)
-            legendTextColor = attributes.getColor(R.styleable.PieViewLegend_legendTextColor, DEFAULT_TEXT_COLOR)
+            textSize = attributes.getDimension(R.styleable.PieViewLegend_legendTextSize, DEFAULT_TEXT_SIZE)
+            textColor = attributes.getColor(R.styleable.PieViewLegend_legendTextColor, DEFAULT_TEXT_COLOR)
             legendShape = when(attributes.getInt(R.styleable.PieViewLegend_legendShape, 0)) {
                 1 -> LegendShape.SQUARE
                 else -> LegendShape.CIRCLE
@@ -160,88 +158,31 @@ class PieViewLegend: View {
         }catch (e: Exception) { Log.w(PieView.TAG, e.message.toString()) } finally { attributes.recycle() }
     }
 
-    private fun generatePaints() =
-        (if(isInEditMode) PieView.testComponents else pieView?.components ?: emptyList()).map { Paint().apply {
-                flags = Paint.ANTI_ALIAS_FLAG
-                color = it.color
-                style = Paint.Style.FILL
-            }}
 
-    private fun generateTextPaint() = Paint().apply {
-            flags = Paint.ANTI_ALIAS_FLAG
-            color = legendTextColor
-            textSize = legendTextSize
-        }
-
-    private fun generateTextBounds() = (if(isInEditMode) PieView.testComponents else pieView?.components ?: emptyList()).map { Rect() }
-
-
-    private fun generateTexts() = (if(isInEditMode) PieView.testComponents else pieView?.components ?: emptyList()).mapIndexed { idx, it ->
-        val baseString = "${if(drawLegendLabel) it.label else ""}${if(drawLegendLabel && drawLegendValue) " - " else ""}"
-        if(!drawLegendValue) baseString
-        else {
-            val pcntg = (pieView?.angles?.get(idx)?.first ?: 0f) * 100
-            baseString + when (legendValueFormat) {
-                LegendFormat.VALUE -> String.format("%#.2f", it.value)
-                LegendFormat.DECIMAL_PERCENT -> String.format("%3.2f%%", pcntg)
-                else -> String.format("%3.0f%%", pcntg)
-            }
-        }
-    }
 
     fun update(view: PieView) {
-        Log.d(TAG, "update pieView")
+        //Log.d(TAG, "update pieView")
         pieView = view
     }
 
-    fun updateTexts() {
-        //Log.d(TAG, "update texts")
-        texts = generateTexts()
-        invalidate()
-    }
-
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        Log.d(TAG, "onMeasure w ${MeasureSpec.toString(widthMeasureSpec)}")
-        Log.d(TAG, "onMeasure h ${MeasureSpec.toString(heightMeasureSpec)}")
         val calcHeight: Float
         val calcWidth: Float
         val count = if(isInEditMode) PieView.testComponents.size else pieView?.components?.size ?: 0
-        val texts = generateTexts()
-        val tb = generateTextBounds()
-        for((i, t) in texts.withIndex()) textPaint.getTextBounds(t, 0, t.length, tb[i])
-        val maxLengthLabel = texts.maxBy { it.length }
-        val textHeight = tb[0].height().toFloat() ?: legendTextSize
-        val maxTextWidth = textPaint.measureText(maxLengthLabel)
+        texts = generateTexts(pieView, valueFormat, drawLabel, drawValue)
+        val textHeight = getTextHeight(textPaint, textHeightBound)
         if(orientation == Orientation.VERTICAL) {
             val maxHeight = max(shapeSize, textHeight)
+            val maxLengthLabel = texts.maxBy { it.length }
+            val maxTextWidth = textPaint.measureText(maxLengthLabel ?: "")
             calcHeight = paddingTop + paddingBottom + (maxHeight * count) + (verticalSpacing * count.minus(1))
             calcWidth = paddingLeft + paddingRight + shapeSize + horizontalSpacing + maxTextWidth
         }else {
+            val textWidthSum = texts.fold(0f) {acc, txt -> acc + max(textPaint.measureText(txt), shapeSize) }
             calcHeight = paddingTop + paddingBottom + verticalSpacing + shapeSize + textHeight
-            val textWidthSum = tb.fold(0f) {acc, bounds -> acc + max(bounds.width().toFloat(), shapeSize) }
             calcWidth = paddingLeft + paddingRight + (horizontalSpacing * count.minus(1)) + textWidthSum
         }
-        Log.d(TAG, "calculated dimens: [${calcWidth}x${calcHeight}]")
         setMeasuredDimension(getDimen(calcWidth.toInt(), widthMeasureSpec), getDimen(calcHeight.toInt(), heightMeasureSpec))
-        bounds.let {
-            it.left = this.left + paddingLeft
-            it.top = this.top + paddingTop
-            it.right = this.right - paddingRight
-            it.bottom = this.bottom - paddingBottom
-        }
-    }
-
-    private fun getDimen(desiredSize: Int, measureSpec: Int) : Int {
-        var result = desiredSize
-        val mode = MeasureSpec.getMode(measureSpec)
-        val size = MeasureSpec.getSize(measureSpec)
-        result = when(mode) {
-            MeasureSpec.EXACTLY -> size
-            MeasureSpec.AT_MOST -> min(result, size)
-            else -> desiredSize
-        }
-        if(result < desiredSize) Log.w(TAG, "View too small, may be clipped")
-        return result
     }
 
     override fun onDraw(canvas: Canvas?) {
@@ -250,55 +191,57 @@ class PieViewLegend: View {
             Log.w(TAG, "PieView is null, please call PieViewLegend.setPieView() first")
             return
         }
-        //compute text boundaries & format labels
-
-        texts = generateTexts()
-        pieView?.components?.forEachIndexed{ index, _ ->
-            textPaint.getTextBounds(texts[index], 0, texts[index].length, textBounds[index])
+        bounds.let {
+            it.left = paddingLeft.toFloat()
+            it.top = paddingTop.toFloat()
+            it.right = (this.width - paddingRight).toFloat()
+            it.bottom = (this.height - paddingBottom).toFloat()
         }
-        val components: List<PieView.Component>? = if(isInEditMode) PieView.testComponents else pieView?.components
-        val textHeight = if(isInEditMode) legendTextSize else textBounds[0].height().toFloat()
+        texts = generateTexts(pieView, valueFormat, drawLabel, drawValue)
+        textPaint.apply {
+            color = textColor
+            textSize = textSize
+        }
+        val components = pieView?.components ?: PieView.testComponents
+        val textHeight = getTextHeight(textPaint, textHeightBound)
         if(orientation == Orientation.VERTICAL) {
-            var top = bounds.top.toFloat()
-            components?.forEachIndexed { index, _ ->
+            var top = paddingTop.toFloat()
+            components.forEachIndexed { index, _ ->
                 val spacing = if(index == components.size.minus(1)) 0f else verticalSpacing
                 val maxHeight = max(shapeSize, textHeight)
                 val cy = top + maxHeight / 2f
-                when(legendOrder){
+                when(legendOrder) {
                     LegendOrder.SHAPE_FIRST -> {
-                        drawShape(canvas, bounds.left.toFloat(), cy - shapeSize/2f, shapeSize, paints[index])
+                        drawShape(canvas, bounds.left, cy - shapeSize/2f, shapeSize, shapePaints[index])
                         canvas.drawText(texts[index],bounds.left + shapeSize + horizontalSpacing, cy + textHeight/2f, textPaint)
                     }
                     LegendOrder.LABEL_FIRST -> {
-                        canvas.drawText(texts[index], bounds.left.toFloat(), cy + textHeight/2f, textPaint)
-                        drawShape(canvas, bounds.left.toFloat() + textPaint.measureText(texts[index]) + horizontalSpacing, cy - shapeSize/2f, shapeSize, paints[index])
+                        canvas.drawText(texts[index], bounds.left, cy + textHeight/2f, textPaint)
+                        drawShape(canvas, bounds.left + textPaint.measureText(texts[index]) + horizontalSpacing, cy - shapeSize/2f, shapeSize, shapePaints[index])
                     }
                 }
-
                 top += maxHeight + spacing
             }
         }else {
-            var left = bounds.left.toFloat()
-            components?.forEachIndexed { index, _ ->
+            var left = bounds.left
+            components.forEachIndexed { index, _ ->
                 val spacing = if(index == components.size.minus(1)) 0f else horizontalSpacing
                 val textWidth = textPaint.measureText(texts[index])
                 val maxWidth = max(shapeSize, textWidth)
                 val cx = maxWidth/2f + left
                 when(legendOrder) {
                     LegendOrder.SHAPE_FIRST -> {
-                        drawShape(canvas, cx - shapeSize/2f, bounds.top.toFloat(), shapeSize, paints[index])
+                        drawShape(canvas, cx - shapeSize/2f, bounds.top, shapeSize, shapePaints[index])
                         canvas.drawText(texts[index], cx - textWidth/2f,bounds.top + verticalSpacing + shapeSize + textHeight, textPaint)
                     }
                     LegendOrder.LABEL_FIRST -> {
                         canvas.drawText(texts[index], cx - textWidth/2f,bounds.top + textHeight, textPaint)
-                        drawShape(canvas, cx - shapeSize/2f, bounds.top.toFloat() + verticalSpacing + textHeight, shapeSize, paints[index])
+                        drawShape(canvas, cx - shapeSize/2f, bounds.top + verticalSpacing + textHeight, shapeSize, shapePaints[index])
                     }
                 }
-
                 left += maxWidth + spacing
             }
         }
-
     }
 
     private fun drawShape(c: Canvas, left: Float, top: Float, size: Float, paint: Paint) {
@@ -330,6 +273,50 @@ class PieViewLegend: View {
     }
     companion object {
         private const val TAG = "PieViewLegend"
+
+        private fun generateTextBounds(pie: PieView?) = (pie?.components ?: PieView.testComponents).map { Rect() }
+
+        private fun getTextHeight(paint: Paint, bound: Rect) : Float {
+            paint.getTextBounds("Test",0, "Test".length, bound)
+            return bound.height().toFloat()
+        }
+
+        private fun generatePaints(pie: PieView?) = (pie?.components ?: PieView.testComponents).map {
+            Paint().apply {
+                flags = Paint.ANTI_ALIAS_FLAG
+                color = it.color
+                style = Paint.Style.FILL
+            }
+        }
+
+        private fun generateTextPaint(textColor: Int, size: Float) = Paint().apply {
+            flags = Paint.ANTI_ALIAS_FLAG
+            color = textColor
+            textSize = size
+        }
+
+
+        private fun generateTexts(pie: PieView?, format: LegendFormat, drawLabel: Boolean, drawValue: Boolean): List<String> {
+            val fmt = when (format) {
+                LegendFormat.VALUE -> "%#.2f"
+                LegendFormat.DECIMAL_PERCENT -> "%3.2f%%"
+                else -> "%3.0f%%"
+            }
+            val comps = pie?.components ?: PieView.testComponents
+            val sum = comps.fold(0f) { acc, c -> acc + c.value}
+            val percents = comps.map { (it.value/sum)*100f }
+            return comps.mapIndexed { idx, it ->
+                if(!drawValue) it.label
+                else {
+                    "%s%s%s".format(
+                        if(drawLabel) it.label else "",
+                        if(drawLabel && drawValue) " " else "",
+                        fmt.format(if(format != LegendFormat.VALUE) percents[idx] else it.value)
+                    )
+                }
+            }
+        }
+
     }
 
 }

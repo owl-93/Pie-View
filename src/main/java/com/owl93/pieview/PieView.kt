@@ -1,7 +1,5 @@
 package com.owl93.pieview
 
-import android.animation.Animator
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
@@ -12,6 +10,27 @@ import java.lang.Exception
 import kotlin.math.max
 import kotlin.math.min
 
+fun View.getDimen(desiredSize: Int, measureSpec: Int) : Int {
+    var result = desiredSize
+    val mode = View.MeasureSpec.getMode(measureSpec)
+    val size = View.MeasureSpec.getSize(measureSpec)
+    result = when(mode) {
+        View.MeasureSpec.EXACTLY -> size
+        View.MeasureSpec.AT_MOST -> min(result, size)
+        else -> desiredSize
+    }
+    if(result < desiredSize) Log.w("owl93/PieView", "View too small, may be clipped")
+    return result
+}
+
+fun View.getBoundaries(bounds: RectF) {
+    bounds.let {
+        it.left = paddingLeft.toFloat()
+        it.top = paddingTop.toFloat()
+        it.right = (width - paddingRight).toFloat()
+        it.bottom = (height - paddingBottom).toFloat()
+    }
+}
 
 class PieView: View {
     private val DEFAULT_STROKE_WIDTH = 70f
@@ -42,6 +61,7 @@ class PieView: View {
         set(value) {
             field = value
             componentPaints = components.map { makePiePaint(it.color, strokeWidth, strokeEnd) }
+            invalidate()
         }
 
     var drawTrack: Boolean = DEFAULT_DRAW_TRACK
@@ -108,8 +128,7 @@ class PieView: View {
         }
 
     private var componentPaints: List<Paint> = emptyList()
-    private var viewBounds = Rect(0, 0, 0, 0)
-    private var pieBounds = RectF(viewBounds)
+    private var pieBounds = RectF()
 
 
     constructor(context: Context) : super(context) { init(null, context) }
@@ -118,42 +137,15 @@ class PieView: View {
     constructor(context: Context, attrs: AttributeSet, defStyleAttr: Int, defStyleRes: Int) : super(context, attrs, defStyleAttr, defStyleRes) { init(attrs, context) }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        //super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-        Log.d(TAG, "onMeasure w ${MeasureSpec.toString(widthMeasureSpec)}")
-        Log.d(TAG, "onMeasure h ${MeasureSpec.toString(heightMeasureSpec)}")
         val desiredWidth = suggestedMinimumWidth + paddingLeft + paddingRight
         val desiredHeight = suggestedMinimumHeight + paddingTop + paddingBottom
         val calcWidth = getDimen(desiredWidth, widthMeasureSpec)
         val calcHeight = getDimen(desiredHeight, widthMeasureSpec)
         val minDimen = min(calcWidth, calcHeight)
         setMeasuredDimension(minDimen, minDimen)
-        viewBounds.let {
-            it.left = this.left + paddingLeft
-            it.top = this.top + paddingTop
-            it.right =  minDimen - paddingRight
-            it.bottom = minDimen - paddingBottom
-        }
 
-        pieBounds.apply {
-            left = viewBounds.left.toFloat()
-            top = viewBounds.top.toFloat()
-            right = viewBounds.right.toFloat()
-            bottom = viewBounds.bottom.toFloat()
-        }
     }
 
-    private fun getDimen(desiredSize: Int, measureSpec: Int) : Int {
-        var result = desiredSize
-        val mode = MeasureSpec.getMode(measureSpec)
-        val size = MeasureSpec.getSize(measureSpec)
-        result = when(mode) {
-            MeasureSpec.EXACTLY -> size
-            MeasureSpec.AT_MOST -> min(result, size)
-            else -> desiredSize
-        }
-        if(result < desiredSize) Log.w(TAG, "View too small, may be clipped")
-        return result
-    }
 
 
     private fun init(attrs: AttributeSet?, context: Context) {
@@ -183,6 +175,7 @@ class PieView: View {
 
     override fun onDraw(canvas: Canvas?) {
         if(canvas == null) return
+        getBoundaries(pieBounds)
         angles = calculateAngles(components, showDividers, dividerWidth)
         val maxStroke = max(strokeWidth, trackWidth)
         if(drawTrack) {
@@ -234,7 +227,7 @@ class PieView: View {
         val deltas = lists.second.map { it.value - (startMap[it.label] ?: error("SHIT")).value }
         components = lists.first.toList()
         val listener: ValueAnimator.AnimatorUpdateListener? = when(anim) {
-            ChangeAnimation.SHIFT -> ShiftAnimationListener(deltas)
+            ChangeAnimation.SHIFT -> ShiftAnimationListener(deltas) { Log.d(TAG, "animation end") }
             ChangeAnimation.SEQUENCE,
             ChangeAnimation.SLIDE,
             ChangeAnimation.SLIDE_STAGGER -> null
@@ -245,27 +238,21 @@ class PieView: View {
         }.start()
     }
 
-    private inner class ShiftAnimationListener(val deltas: List<Float>,
-                                               val onEnd: (() -> Unit)? = null)
-        : ValueAnimator.AnimatorUpdateListener {
-
-        val startValueMap: Map<String, Float> = HashMap<String, Float>().also { map ->
-            components.forEach { map[it.label] = it.value }
-        }
+    private inner class ShiftAnimationListener(val deltas: List<Float>, val onEnd: (() -> Unit)? = null) : ValueAnimator.AnimatorUpdateListener {
+        val startValueMap: Map<String, Float> = HashMap<String, Float>().also { map -> components.forEach { map[it.label] = it.value } }
 
         override fun onAnimationUpdate(animation: ValueAnimator?) {
+            components.forEachIndexed { idx, comp ->
+                comp.value = (startValueMap[comp.label] ?: 0f) + (animation!!.animatedFraction * deltas[idx])
+            }
             if(animation?.animatedFraction == 1f) {
                 onEnd?.invoke()
-                legend?.update(this@PieView)
+                val newComponents = components.filter { it.value != 0f }
+                components = newComponents
+                return
             }
-            components.forEachIndexed { idx, comp ->
-                val newCompVal = (startValueMap[comp.label] ?: 0f) + (animation!!.animatedFraction * deltas[idx])
-                //Log.d(TAG, "${comp.label}: ${comp.value} -> $newCompVal")
-                comp.value = newCompVal
-            }
-            //Log.d(TAG, "--------------------------")
             invalidate()
-            legend?.updateTexts()
+            legend?.invalidate()
         }
     }
 
@@ -276,11 +263,9 @@ class PieView: View {
         SLIDE_STAGGER
     }
 
-    data class Component(
-        var label: String = "",
-        var value: Float = 1f,
-        var color: Int = Color.BLACK
-    )
+    data class Component(var label: String = "", var value: Float = 1f, var color: Int = Color.BLACK) {
+        override fun toString() = "$label: $value"
+    }
 
     class PieViewException(msg: String): Exception(msg)
 
@@ -294,20 +279,12 @@ class PieView: View {
         )
 
 
-        var testAnimateComponents: List<Component> = listOf(
-            Component("Test1",.25f,  Color.parseColor("#D500F9")),
-            Component("Test2", 1.2f, Color.parseColor("#F50057")),
-            Component("Test3",.78f, Color.parseColor("#2979FF")),
-            Component("Test4", .37f,  Color.parseColor("#76FF03"))
-        )
-
         //returns paris of (%, and degrees) for each component
-        private fun calculateAngles(components: List<Component>, showDividers: Boolean, dividerWidth: Int): List<Pair<Float, Float>> {
+        internal fun calculateAngles(components: List<Component>, showDividers: Boolean, dividerWidth: Int): List<Pair<Float, Float>> {
             val total = components.fold(0f) {sum, comp -> sum + comp.value}
-            val nonZeroCount = components.filter { it.value != 0f }.size
-            val availableDegrees = 360f - if(showDividers) (dividerWidth.toFloat() * nonZeroCount) else 0f
+            val spacerCount = if(components.size > 1) components.size else 0
+            val availableDegrees = 360f - if(showDividers) (dividerWidth.toFloat() * spacerCount) else 0f
             return components.map { Pair(it.value/total, (it.value/total) * availableDegrees) }
-
         }
 
         private fun makePiePaint(paintColor: Int, width: Float, cap: Paint.Cap) = Paint().apply {
