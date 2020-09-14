@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <declare-styleable name="PieView">
-        <attr name="strokeWidth" format="dimension"/>
+        <attr name="strokeSize" format="dimension"/>
         <attr name="startAngle" format="integer"/>
         <attr name="drawTrack" format="boolean"/>
         <attr name="trackColor" format="color"/>

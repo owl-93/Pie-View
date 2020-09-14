@@ -146,13 +146,11 @@ class PieView: View {
 
     }
 
-
-
     private fun init(attrs: AttributeSet?, context: Context) {
         if(attrs == null) return
         val attributes = context.theme.obtainStyledAttributes(attrs, R.styleable.PieView, 0,0)
         try {
-            strokeWidth = attributes.getDimension(R.styleable.PieView_strokeWidth, DEFAULT_STROKE_WIDTH)
+            strokeWidth = attributes.getDimension(R.styleable.PieView_strokeSize, DEFAULT_STROKE_WIDTH)
             strokeEnd = when(attributes.getInt(R.styleable.PieView_strokeEnd, 0)) {
                 1 -> Paint.Cap.ROUND
                 else -> Paint.Cap.BUTT
