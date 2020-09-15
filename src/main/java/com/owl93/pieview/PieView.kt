@@ -219,6 +219,7 @@ class PieView: View {
     }
 
 
+    //TODO: handle the other animation types
     fun animateChange(newComponents: List<Component>, anim: ChangeAnimation = ChangeAnimation.SHIFT, animDuration: Long = 500) {
         val lists = computeStartEndLists(components, newComponents)
         val startMap = lists.first.toLabelMap()
